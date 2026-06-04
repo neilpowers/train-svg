@@ -5,6 +5,7 @@ import LuggageGraphic from "./LuggageGraphic";
 import VestibuleGraphic from "./VestibuleGraphic";
 import TableGraphic from "./TableGraphic";
 import WheelchairGraphic from "./WheelchairGraphic";
+import FireExtinguisherGraphic from "./FireExtinguisherGraphic";
 
 const SEAT_HEIGHT = 40;
 
@@ -28,15 +29,30 @@ const CarriageSVG = ({ data, landscape = false }) => {
   // Content width: 2 cols + aisle + 2 cols = 240px
   const contentWidth = layout.seatColumns.length * config.seatWidth + config.aisleWidth;
 
-  // Build rowY: accumulated Y (portrait) or X (landscape) position per row.
+  // Build rowY: accumulated Y position per row.
+  // Rows that are the backwardRow of a bay table get seatPitch spacing (wider gap for table).
+  // All other rows get SEAT_HEIGHT + rowGap spacing.
   const tableGapRows = new Set(tables.map((t) => t.backwardRow));
-  const rowY = {};
-  let acc = 0;
+
+  // Which columns participate in bay tables (use wide-gap rowY)?
+  const tableColumns = new Set(tables.flatMap((t) => t.columns));
+
+  const rowY = {};      // used by columns that have bay tables
+  const slotY = {};     // used by columns that never have bay tables (uniform spacing)
+  let accGapped = 0;
+  let accSlot = 0;
   for (let row = 1; row <= layout.rows; row++) {
-    rowY[row] = acc;
-    acc += tableGapRows.has(row) ? config.seatPitch : SEAT_HEIGHT + config.rowGap;
+    rowY[row] = accGapped;
+    slotY[row] = accSlot;
+    accGapped += tableGapRows.has(row) ? config.seatPitch : SEAT_HEIGHT + config.rowGap;
+    accSlot += SEAT_HEIGHT + config.rowGap;
   }
-  const totalLength = acc; // total along the row axis
+  const totalLength = accGapped; // total length driven by the gapped side
+
+  // Get the correct Y for a given row and column.
+  // If the column participates in a bay table, use gapped rowY; otherwise uniform slotY.
+  const getRowY = (row, col) =>
+    tableColumns.has(col) ? rowY[row] : slotY[row];
 
   // In portrait:  row axis = Y (top→bottom), col axis = X (left→right)
   // In landscape (90° anti-clockwise from portrait):
@@ -56,7 +72,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
       ? colIndex * config.seatWidth
       : colIndex * config.seatWidth + config.aisleWidth;
 
-  // Convert rowRange to { start, length } along the row axis.
+  // Convert rowRange to { start, length } along the row axis (always uses gapped rowY).
   const rowRangeToSpan = (rowRange) => {
     const start = rowY[rowRange[0]];
     const end = rowY[rowRange[1]] + SEAT_HEIGHT;
@@ -76,17 +92,22 @@ const CarriageSVG = ({ data, landscape = false }) => {
 
   const isFlipped = data.direction.orientation === "right-to-left";
 
+  // Flip the column offset mathematically so no SVG scale transform is needed.
+  // This keeps text readable without any counter-transforms in child components.
+  const flipCol = (colOffset, colSpan) =>
+    isFlipped ? contentWidth - colOffset - colSpan : colOffset;
+
+  // pos() with built-in flip: colVal is always the pre-flip offset, colHeight is its span.
+  const flippedPos = (rowVal, colVal, rowSpan = SEAT_HEIGHT, colHeight = SEAT_HEIGHT) => {
+    const fc = flipCol(colVal, colHeight);
+    return pos(rowVal, fc, rowSpan, colHeight);
+  };
+
   return (
     <svg viewBox={viewBox} style={{ width: "100%" }}>
       <rect width="100%" height="100%" fill="#ecf0f1" />
 
-      <g transform={
-        isFlipped
-          ? landscape
-            ? `scale(1,-1) translate(0,-${config.viewboxWidth})`
-            : `scale(-1,1) translate(-${config.viewboxWidth},0)`
-          : ""
-      }>
+      <g>
 
         {/* Tables */}
         {tables.map((table) => {
@@ -103,7 +124,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
               const colIndex = layout.seatColumns.indexOf(col);
               const colOffset = getColOffset(colIndex) + (config.seatWidth - tableColSpan) / 2;
               const rowOffset = gapStart + vMargin;
-              const { x, y } = pos(rowOffset, colOffset, tableRowSpan, tableColSpan);
+              const { x, y } = flippedPos(rowOffset, colOffset, tableRowSpan, tableColSpan);
               const { width, height } = dims(tableColSpan, tableRowSpan);
               return (
                 <g key={`${table.id}_${col}`} transform={`translate(${x}, ${y})`}>
@@ -118,7 +139,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
           const colIndices = table.columns.map((col) => layout.seatColumns.indexOf(col));
           const colOffset = getColOffset(Math.min(...colIndices)) + (colSpanPx - tableColSpan) / 2;
           const rowOffset = gapStart + vMargin;
-          const { x, y } = pos(rowOffset, colOffset, tableRowSpan, tableColSpan);
+          const { x, y } = flippedPos(rowOffset, colOffset, tableRowSpan, tableColSpan);
           const { width, height } = dims(tableColSpan, tableRowSpan);
 
           return (
@@ -130,13 +151,63 @@ const CarriageSVG = ({ data, landscape = false }) => {
 
         {/* Seats */}
         {seats.map((seat) => {
-          const rowOffset = rowY[seat.row];
+          // Determine which column(s) this entry uses for Y lookup.
+          const primaryCol = seat.column ?? (seat.columns?.[0]);
+          const rowOffset = getRowY(seat.row, primaryCol);
+
+          // "table" type: a table occupying a single column slot within a row.
+          // Sits at the same row height as adjacent seats — no inter-row gap needed.
+          // size: "small" reduces the graphic to 60% width and height, centred in the slot.
+          if (seat.type === "table" || seat.type === "inlineTable") {
+            const colIndex = layout.seatColumns.indexOf(seat.column);
+            const colOffset = getColOffset(colIndex);
+            const isSmall = seat.size === "small";
+            const scale = isSmall ? 0.6 : 1;
+            const margin = isSmall
+              ? Math.round((config.seatWidth * (1 - scale)) / 2)
+              : 4;
+            const tableColSpan = Math.round(config.seatWidth * scale) - (isSmall ? 0 : margin * 2);
+            const tableRowSpan = Math.round(SEAT_HEIGHT * scale) - (isSmall ? 0 : margin * 2);
+            const vOffset = isSmall ? Math.round((SEAT_HEIGHT - tableRowSpan) / 2) : margin;
+            const { x, y } = flippedPos(rowOffset, colOffset + margin, SEAT_HEIGHT, tableColSpan);
+            const { width, height } = dims(tableColSpan, tableRowSpan);
+            return (
+              <g key={seat.id} transform={`translate(${x}, ${y + (landscape ? 0 : vOffset)})`}>
+                <TableGraphic width={width} height={height} />
+              </g>
+            );
+          }
+
+          if (seat.type === "fireExtinguisher") {
+            const colIndex = layout.seatColumns.indexOf(seat.column);
+            const colOffset = getColOffset(colIndex);
+            const { x, y } = flippedPos(rowOffset, colOffset, SEAT_HEIGHT, SEAT_HEIGHT);
+            const { width, height } = dims(SEAT_HEIGHT, SEAT_HEIGHT);
+            return (
+              <g key={seat.id} transform={`translate(${x}, ${y})`}>
+                <FireExtinguisherGraphic width={width} height={height} />
+              </g>
+            );
+          }
+
+          // Inline luggage rack occupying a single column slot within a row.
+          if (seat.type === "luggage") {
+            const colIndex = layout.seatColumns.indexOf(seat.column);
+            const colOffset = getColOffset(colIndex);
+            const { x, y } = flippedPos(rowOffset, colOffset, SEAT_HEIGHT, SEAT_HEIGHT);
+            const { width, height } = dims(SEAT_HEIGHT, SEAT_HEIGHT);
+            return (
+              <g key={seat.id} transform={`translate(${x}, ${y})`}>
+                <LuggageGraphic width={width} height={height} />
+              </g>
+            );
+          }
 
           if (seat.type === "wheelchair") {
             const colIndices = seat.columns.map((col) => layout.seatColumns.indexOf(col));
             const colOffset = getColOffset(Math.min(...colIndices));
             const colSpan = config.seatWidth * seat.columns.length;
-            const { x, y } = pos(rowOffset, colOffset, SEAT_HEIGHT, colSpan);
+            const { x, y } = flippedPos(rowOffset, colOffset, SEAT_HEIGHT, colSpan);
             const { width, height } = dims(colSpan, SEAT_HEIGHT);
             return (
               <g key={seat.id} transform={`translate(${x}, ${y})`}>
@@ -148,7 +219,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
           const colIndex = layout.seatColumns.indexOf(seat.column);
           const colOffset = getColOffset(colIndex);
           const rotation = getSeatRotation(seat.facing, data.direction.travel);
-          const { x, y } = pos(rowOffset, colOffset, SEAT_HEIGHT, SEAT_HEIGHT);
+          const { x, y } = flippedPos(rowOffset, colOffset, SEAT_HEIGHT, SEAT_HEIGHT);
 
           // Anti-clockwise 90° from portrait: seats need -90° orientation rotation.
           const seatCx = SEAT_HEIGHT / 2;
@@ -158,7 +229,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
 
           return (
             <g key={seat.id} transform={`translate(${x}, ${y}) rotate(${totalRotation}, ${seatCx}, ${seatCy})`}>
-              <SeatGraphic label={seat.id} rotation={totalRotation} />
+              <SeatGraphic label={seat.id} rotation={totalRotation} reserved={seat.reserved} unreservable={seat.unreservable} reservable={seat.reservable} landscape={landscape} />
             </g>
           );
         })}
@@ -167,7 +238,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
         {elements.map((el) => {
           if (el.type === "vestibule") {
             const { start, length: rowSpan } = rowRangeToSpan(el.rowRange);
-            const { x, y } = pos(start, 0, rowSpan, contentWidth);
+            const { x, y } = flippedPos(start, 0, rowSpan, contentWidth);
             const { width, height } = dims(contentWidth, rowSpan);
             return (
               <g key={el.id} transform={`translate(${x}, ${y})`}>
@@ -181,7 +252,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
             const colIndices = el.columns.map((col) => layout.seatColumns.indexOf(col));
             const colOffset = getColOffset(Math.min(...colIndices));
             const colSpan = config.seatWidth * el.columns.length;
-            const { x, y } = pos(start, colOffset, rowSpan, colSpan);
+            const { x, y } = flippedPos(start, colOffset, rowSpan, colSpan);
             const { width, height } = dims(colSpan, rowSpan);
             return (
               <g key={el.id} transform={`translate(${x}, ${y})`}>
@@ -195,7 +266,7 @@ const CarriageSVG = ({ data, landscape = false }) => {
             const colIndices = el.columns.map((col) => layout.seatColumns.indexOf(col));
             const colOffset = getColOffset(Math.min(...colIndices));
             const colSpan = config.seatWidth * el.columns.length;
-            const { x, y } = pos(start, colOffset, rowSpan, colSpan);
+            const { x, y } = flippedPos(start, colOffset, rowSpan, colSpan);
             const { width, height } = dims(colSpan, rowSpan);
             return (
               <g key={el.id} transform={`translate(${x}, ${y})`}>
