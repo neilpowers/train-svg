@@ -1,10 +1,13 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import ApiTest from "./ApiTest.jsx";
+import "./index.css";
 
-createRoot(document.getElementById('root')).render(
+const page = new URLSearchParams(window.location.search).get("page");
+
+createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
-  </StrictMode>,
-)
+    {page === "api-test" ? <ApiTest /> : <App />}
+  </StrictMode>
+);
