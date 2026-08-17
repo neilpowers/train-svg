@@ -61,7 +61,7 @@ app.get("/api/coaches", async (req, res) => {
     const token = await getBearerToken();
 
     const url =
-      `${process.env.NR_API_BASE}/reservations/api/v1/services/${serviceId}/coaches` +
+      `${process.env.NR_API_BASE}/api/v2/services/${serviceId}/coaches` +
       `?serviceOriginDate=${serviceOriginDate}` +
       `&carrierCode=${carrierCode}` +
       `&boardLocation=${boardLocation}` +
@@ -70,6 +70,7 @@ app.get("/api/coaches", async (req, res) => {
     const apiRes = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
+        client_id: `${process.env.NR_CLIENT_ID}`,
         "Content-Type": "application/json",
       },
     });
