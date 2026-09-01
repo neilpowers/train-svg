@@ -6,6 +6,7 @@ import VestibuleGraphic from "./VestibuleGraphic";
 import TableGraphic from "./TableGraphic";
 import WheelchairGraphic from "./WheelchairGraphic";
 import FireExtinguisherGraphic from "./FireExtinguisherGraphic";
+import BikeGraphic from "./BikeGraphic";
 
 const SEAT_HEIGHT = 40;
 
@@ -16,18 +17,22 @@ const getSeatRotation = (seatFacing, travelDirection) => {
 };
 
 const CarriageSVG = ({ data, landscape = false }) => {
-  const { layout, seats, elements, tables = [], render } = data;
+  const { layout, seats, elements, tables = [], render, bikeSpaces = [], floorplanDimensions, seatXPosRange } = data;
 
   const config = {
     seatWidth: render.seatWidth,
     seatPitch: render.seatPitch,
     rowGap: render.rowGap ?? 8,
     aisleWidth: render.aisleWidth,
-    viewboxWidth: 300,
   };
 
-  // Content width: 2 cols + aisle + 2 cols = 240px
+  // Content width: 2 cols + aisle + 2 cols
   const contentWidth = layout.seatColumns.length * config.seatWidth + config.aisleWidth;
+
+  // viewboxWidth drives the cross-section dimension (height in portrait, height in landscape).
+  // Derive it from actual content + padding rather than hardcoding 300.
+  const crossSectionPadding = 20;
+  const viewboxWidth = contentWidth + crossSectionPadding * 2;
 
   // Build rowY: accumulated Y position per row.
   // Rows that are the backwardRow of a bay table get seatPitch spacing (wider gap for table).
@@ -49,6 +54,13 @@ const CarriageSVG = ({ data, landscape = false }) => {
   }
   const totalLength = accGapped; // total length driven by the gapped side
 
+  // Enforce a minimum carriage length so all coaches render at the same scale.
+  // 800px accommodates a typical Pendolino coach with ~13 rows at standard pitch.
+  const MIN_LENGTH = 800;
+  const MIN_WIDTH  = viewboxWidth;
+  const renderLength = Math.max(totalLength, MIN_LENGTH);
+  const renderWidth  = Math.max(viewboxWidth, MIN_WIDTH);
+
   // Get the correct Y for a given row and column.
   // If the column participates in a bay table, use gapped rowY; otherwise uniform slotY.
   const getRowY = (row, col) =>
@@ -58,12 +70,12 @@ const CarriageSVG = ({ data, landscape = false }) => {
   // In landscape (90° anti-clockwise from portrait):
   //   row axis = X (left→right, row 1 on the left)
   //   col axis = Y (bottom→top, col A at the bottom)
-  const centreOffset = (config.viewboxWidth - contentWidth) / 2;
+  const centreOffset = (viewboxWidth - contentWidth) / 2;
 
   // colHeight = the pixel height of the element along the column axis
   const pos = (rowVal, colVal, rowSpan = SEAT_HEIGHT, colHeight = SEAT_HEIGHT) =>
     landscape
-      ? { x: rowVal, y: config.viewboxWidth - colVal - colHeight - centreOffset }
+      ? { x: rowVal, y: viewboxWidth - colVal - colHeight - centreOffset }
       : { x: colVal + centreOffset, y: rowVal };
 
   // Column pixel offset within the content block (unchanged in both orientations).
@@ -79,10 +91,11 @@ const CarriageSVG = ({ data, landscape = false }) => {
     return { start, length: end - start };
   };
 
-  // ViewBox: portrait = width × totalLength, landscape = totalLength × width
+  // ViewBox: portrait = width × length, landscape = length × width
+  // Uses renderLength/renderWidth so the canvas is always at least MIN size.
   const viewBox = landscape
-    ? `0 0 ${totalLength} ${config.viewboxWidth}`
-    : `0 0 ${config.viewboxWidth} ${totalLength}`;
+    ? `0 0 ${renderLength} ${renderWidth}`
+    : `0 0 ${renderWidth} ${renderLength}`;
 
   // Element dimensions: in portrait width=colSpan, height=rowSpan; landscape swaps them.
   const dims = (colSpan, rowSpan) =>
@@ -104,7 +117,21 @@ const CarriageSVG = ({ data, landscape = false }) => {
   };
 
   return (
-    <svg viewBox={viewBox} style={{ width: "100%" }}>
+    <svg
+      viewBox={viewBox}
+      style={
+        landscape
+          ? {
+              height: `${renderWidth}px`,
+              width: `${renderLength}px`,
+              display: "block",
+            }
+          : {
+              width: "100%",
+              display: "block",
+            }
+      }
+    >
       <rect width="100%" height="100%" fill="#ecf0f1" />
 
       <g>
@@ -285,6 +312,37 @@ const CarriageSVG = ({ data, landscape = false }) => {
 
           return null;
         })}
+        {/* Bike spaces — positioned by mapping s3 pixel coords to SVG space.
+            xPos aligns with the row axis; yPos aligns with the cross-section axis.
+            We use the regular seat xPos range so bikes sit correctly relative
+            to the rendered seat grid. */}
+        {bikeSpaces.length > 0 && floorplanDimensions && seatXPosRange && (() => {
+          console.log('[CarriageSVG] rendering bikes:', bikeSpaces, 'seatXPosRange:', seatXPosRange, 'totalLength:', totalLength, 'floorplanDimensions:', floorplanDimensions);
+          const xRange = seatXPosRange.max - seatXPosRange.min || 1;
+          const bikeSize = SEAT_HEIGHT;
+
+          return bikeSpaces.map(bike => {
+            // Map xPos to the row axis using the same scale as the seat grid
+            const normX = (bike.xPos - seatXPosRange.min) / xRange;
+            const rowAxisPos = normX * totalLength;
+
+            // yPos: s3 image has high yPos at bottom → column A (left in portrait).
+            // Invert so bottom-of-image maps to low colOffset (left side).
+            const normY = bike.yPos / floorplanDimensions.height;
+            const colAxisPos = (1 - normY) * contentWidth + centreOffset;
+
+            const { x, y } = landscape
+              ? { x: rowAxisPos, y: viewboxWidth - colAxisPos - bikeSize }
+              : { x: colAxisPos, y: rowAxisPos };
+
+            return (
+              <g key={bike.id} transform={`translate(${x}, ${y})`}>
+                <BikeGraphic width={bikeSize} height={bikeSize} />
+              </g>
+            );
+          });
+        })()}
+
       </g>
     </svg>
   );

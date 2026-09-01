@@ -9,27 +9,55 @@ function getTomorrowDate() {
 }
 
 /**
- * Fetch coach seat map data via the local proxy server.
- * The proxy handles token acquisition — no credentials are needed here.
+ * Read service parameters from the URL query string.
+ * Returns null if any required parameter is missing.
+ *
+ * Required params:
+ *   ?service=VT662000  → serviceId
+ *   ?carrier=VT        → carrierCode
+ *   ?from=GLC          → boardLocation
+ *   ?to=EUS            → alightLocation
+ *
+ * Optional:
+ *   ?date=2026-08-28   → serviceOriginDate (defaults to next weekday if omitted)
+ *
+ * Example:
+ *   http://localhost:5173?service=VT662000&carrier=VT&from=GLC&to=EUS
  */
-export async function fetchCoaches({
-  serviceId = "VT662000",
-  carrierCode = "VT",
-  boardLocation = "GLC",
-  alightLocation = "EUS",
-  serviceOriginDate = getTomorrowDate(),
-  //serviceOriginDate = "2026-08-17",
+function getParamsFromURL() {
+  const p = new URLSearchParams(window.location.search);
 
-} = {}) {
-  const params = new URLSearchParams({
+  const serviceId     = p.get("service");
+  const carrierCode   = p.get("carrier");
+  const boardLocation = p.get("from");
+  const alightLocation = p.get("to");
+
+  // All four are required — return null if any are absent
+  if (!serviceId || !carrierCode || !boardLocation || !alightLocation) {
+    return null;
+  }
+
+  return {
     serviceId,
-    serviceOriginDate,
+    serviceOriginDate: p.get("date") ?? getTomorrowDate(),
     carrierCode,
     boardLocation,
     alightLocation,
-  });
+  };
+}
 
-  const res = await fetch(`/api/coaches?${params.toString()}`);
+/**
+ * Fetch coach seat map data via the local proxy server.
+ * Returns null (rather than throwing) if required URL params are missing.
+ * Throws on network or API errors.
+ */
+export async function fetchCoaches() {
+  const params = getParamsFromURL();
+
+  if (!params) return null;
+
+  const query = new URLSearchParams(params);
+  const res = await fetch(`/api/coaches?${query.toString()}`);
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));

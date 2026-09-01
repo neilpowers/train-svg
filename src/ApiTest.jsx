@@ -52,6 +52,7 @@ function ApiTest() {
     lineHeight: "1.6",
     maxHeight: "80vh",
     whiteSpace: "pre",
+    textAlign: "left",
   };
 
   if (loading) {

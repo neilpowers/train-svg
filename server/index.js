@@ -46,12 +46,19 @@ async function getBearerToken() {
 // --- Coaches endpoint ---
 app.get("/api/coaches", async (req, res) => {
   try {
-    const {
+    /*const {
       serviceId = "VT662000",
       serviceOriginDate,
       carrierCode = "VT",
       boardLocation = "GLC",
       alightLocation = "EUS",
+    } = req.query;*/
+    const {
+      serviceId = "TP400100",
+      serviceOriginDate,
+      carrierCode = "TP",
+      boardLocation = "EDB",
+      alightLocation = "NCL",
     } = req.query;
 
     if (!serviceOriginDate) {

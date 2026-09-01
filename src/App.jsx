@@ -10,17 +10,53 @@ function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [noParams, setNoParams] = useState(false);
 
   useEffect(() => {
     fetchCoaches()
       .then((data) => {
-        // Take the first two coaches only
+        if (!data) {
+          setNoParams(true);
+          return;
+        }
         const first2 = (data.coaches || []).slice(0, 2);
         setCoaches(first2.map(transformS3Coach));
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  if (noParams) {
+    return (
+      <div style={styles.page}>
+        <h2 style={styles.heading}>Train Seat Map</h2>
+        <p style={styles.status}>No service specified.</p>
+        <p style={styles.hint}>
+          Add the following parameters to the URL to load a seat map:
+        </p>
+        <code style={styles.code}>
+          ?service=VT662000&amp;carrier=VT&amp;from=GLC&amp;to=EUS
+        </code>
+        <table style={styles.paramTable}>
+          <tbody>
+            {[
+              ["service", "Service ID", "VT662000"],
+              ["carrier", "Carrier code", "VT"],
+              ["from", "Board location (CRS)", "GLC"],
+              ["to", "Alight location (CRS)", "EUS"],
+              ["date", "Date (YYYY-MM-DD) — optional", "next weekday"],
+            ].map(([param, desc, example]) => (
+              <tr key={param}>
+                <td style={styles.paramName}>{param}</td>
+                <td style={styles.paramDesc}>{desc}</td>
+                <td style={styles.paramExample}>{example}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -89,7 +125,9 @@ function App() {
         ))}
       </div>
 
-      <CarriageSVG data={currentCoach} landscape={isLandscape} />
+      <div style={isLandscape ? styles.scrollContainer : undefined}>
+        <CarriageSVG data={currentCoach} landscape={isLandscape} />
+      </div>
     </div>
   );
 }
@@ -105,7 +143,7 @@ const styles = {
     fontSize: "18px",
     fontWeight: "600",
     margin: "0 0 12px",
-    color: "#2c3e50",
+    color: "#fff",
   },
   status: {
     fontSize: "15px",
@@ -116,6 +154,37 @@ const styles = {
     color: "#888",
     marginTop: "8px",
   },
+  code: {
+    display: "block",
+    marginTop: "10px",
+    marginBottom: "16px",
+    padding: "8px 12px",
+    background: "#1e1e1e",
+    color: "#d4d4d4",
+    borderRadius: "6px",
+    fontSize: "13px",
+    fontFamily: "monospace",
+  },
+  paramTable: {
+    borderCollapse: "collapse",
+    fontSize: "13px",
+    color: "#555",
+  },
+  paramName: {
+    fontFamily: "monospace",
+    fontWeight: "600",
+    padding: "4px 12px 4px 0",
+    color: "#2c3e50",
+    whiteSpace: "nowrap",
+  },
+  paramDesc: {
+    padding: "4px 16px 4px 0",
+  },
+  paramExample: {
+    fontFamily: "monospace",
+    color: "#888",
+    padding: "4px 0",
+  },
   tabBar: {
     display: "flex",
     gap: "8px",
@@ -125,14 +194,14 @@ const styles = {
     padding: "6px 16px",
     border: "1px solid #bdc3c7",
     borderRadius: "6px",
-    background: "#f5f6fa",
+    background: "#2c3e50",
     cursor: "pointer",
     fontSize: "14px",
-    color: "#555",
+    color: "#fff",
   },
   tabActive: {
-    background: "#2c3e50",
-    color: "#fff",
+    background: "#f5f6fa",
+    color: "#2c3e50",
     borderColor: "#2c3e50",
   },
   legend: {
@@ -140,6 +209,7 @@ const styles = {
     gap: "16px",
     marginBottom: "12px",
     flexWrap: "wrap",
+    visibility: "hidden",
   },
   legendItem: {
     display: "flex",
@@ -154,7 +224,12 @@ const styles = {
   },
   legendLabel: {
     fontSize: "12px",
-    color: "#555",
+    color: "#fff",
+  },
+  scrollContainer: {
+    overflowX: "auto",
+    overflowY: "hidden",
+    WebkitOverflowScrolling: "touch", // smooth scroll on iOS
   },
 };
 
