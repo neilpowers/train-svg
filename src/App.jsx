@@ -19,8 +19,12 @@ function App() {
           setNoParams(true);
           return;
         }
-        const first2 = (data.coaches || []).slice(0, 2);
-        setCoaches(first2.map(transformS3Coach));
+        const allCoaches = data.coaches || [];
+        const coachParam = new URLSearchParams(window.location.search).get("coach");
+        const filtered = coachParam
+          ? allCoaches.filter(c => c.id === coachParam)
+          : allCoaches;
+        setCoaches(filtered.map(transformS3Coach));
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -45,6 +49,7 @@ function App() {
               ["from", "Board location (CRS)", "GLC"],
               ["to", "Alight location (CRS)", "EUS"],
               ["date", "Date (YYYY-MM-DD) — optional", "next weekday"],
+              ["coach", "Single coach ID — optional", "A"],
             ].map(([param, desc, example]) => (
               <tr key={param}>
                 <td style={styles.paramName}>{param}</td>

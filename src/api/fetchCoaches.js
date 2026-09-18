@@ -27,9 +27,9 @@ function getTomorrowDate() {
 function getParamsFromURL() {
   const p = new URLSearchParams(window.location.search);
 
-  const serviceId     = p.get("service");
-  const carrierCode   = p.get("carrier");
-  const boardLocation = p.get("from");
+  const serviceId      = p.get("service");
+  const carrierCode    = p.get("carrier");
+  const boardLocation  = p.get("from");
   const alightLocation = p.get("to");
 
   // All four are required — return null if any are absent
@@ -39,10 +39,12 @@ function getParamsFromURL() {
 
   return {
     serviceId,
-    serviceOriginDate: p.get("date") ?? getTomorrowDate(),
+    serviceOriginDate: p.get("date")  ?? getTomorrowDate(),
     carrierCode,
     boardLocation,
     alightLocation,
+    // Optional — filter to a single coach by ID (e.g. ?coach=A)
+    coach: p.get("coach") ?? null,
   };
 }
 
