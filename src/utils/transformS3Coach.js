@@ -14,9 +14,12 @@
 export function transformS3Coach(coach) {
   const allSeats = coach.seats || [];
 
+  // Seats with empty propertyCodes are placeholders — exclude them from display
+  const displayableSeats = allSeats.filter(s => s.propertyCodes?.length > 0);
+
   // Build all seat entries — bikes and regular seats go into the same array,
   // differentiated by type so CarriageSVG can render them appropriately.
-  const seats = allSeats.map(seat => {
+  const seats = displayableSeats.map(seat => {
     const isBike = seat.inventoryClass === "9B" || seat.propertyCodes.includes("BIKE");
 
     const entry = {
@@ -48,9 +51,9 @@ export function transformS3Coach(coach) {
     return entry;
   });
 
-  // Bounding box across all seats (including bikes) so the canvas scales correctly
-  const xValues = allSeats.map(s => s.xPos);
-  const yValues = allSeats.map(s => s.yPos);
+  // Bounding box across displayable seats so the canvas scales correctly
+  const xValues = displayableSeats.map(s => s.xPos);
+  const yValues = displayableSeats.map(s => s.yPos);
 
   const travelDirection = coach.isReversed ? "backward" : "forward";
 
