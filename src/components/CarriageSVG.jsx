@@ -1,11 +1,11 @@
 import SeatGraphic from "./SeatGraphic";
 import BikeGraphic from "./BikeGraphic";
+import TableGraphic from "./TableGraphic";
 
 const SEAT_SIZE = 40;
 
-// Minimum canvas dimensions so all coaches appear at the same scale
-const MIN_LENGTH = 800;
-const MIN_WIDTH  = 280;
+// Minimum cross-section height so the carriage doesn't render too narrow
+const MIN_WIDTH = 280;
 
 const getSeatRotation = (seatFacing, travelDirection) => {
   if (seatFacing === "forward")  return travelDirection === "forward" ? 0   : 180;
@@ -16,18 +16,21 @@ const getSeatRotation = (seatFacing, travelDirection) => {
 const CarriageSVG = ({ data, landscape = false }) => {
   const {
     seats = [],
-    seatXPosRange,
+    floorplanDimensions,
     seatYPosRange,
     direction,
   } = data;
 
+  const fp = floorplanDimensions ?? { width: 1173, height: 306 };
+
   // --- Coordinate scaling ---
-  // s3 xPos → row axis (left→right in landscape, top→bottom in portrait)
-  // s3 yPos → cross-section axis
-  const xMin = seatXPosRange?.min ?? 0;
-  const xMax = seatXPosRange?.max ?? 1173;
+  // s3 xPos → row axis: use full floorplan width so the canvas represents the
+  // entire carriage length, not just the seat area.
+  // s3 yPos → cross-section axis: still scaled to the actual seat yPos range.
+  const xMin = 0;
+  const xMax = fp.width;
   const yMin = seatYPosRange?.min ?? 0;
-  const yMax = seatYPosRange?.max ?? 306;
+  const yMax = seatYPosRange?.max ?? fp.height;
 
   const xRange = (xMax - xMin) || 1;
   const yRange = (yMax - yMin) || 1;
@@ -35,17 +38,19 @@ const CarriageSVG = ({ data, landscape = false }) => {
   // Padding around the seat grid in SVG units
   const pad = SEAT_SIZE / 2;
 
-  // Canvas dimensions — enforce minimum so all coaches are the same size
-  const renderLength = Math.max(xRange + SEAT_SIZE + pad * 2, MIN_LENGTH);
+  // Canvas dimensions — length driven by floorplan width, cross-section by seat span
+  const renderLength = xRange + SEAT_SIZE + pad * 2;
   const renderWidth  = Math.max(yRange + SEAT_SIZE + pad * 2, MIN_WIDTH);
 
+  // Scale factors: s3 pixels → SVG units
+  const xScale = (renderLength - SEAT_SIZE - pad * 2) / xRange;
+  const yScale = (renderWidth  - SEAT_SIZE - pad * 2) / yRange;
+
   // Map an s3 xPos to SVG row-axis coordinate
-  const toRowAxis = (xPos) =>
-    pad + ((xPos - xMin) / xRange) * (renderLength - SEAT_SIZE - pad * 2);
+  const toRowAxis = (xPos) => pad + (xPos - xMin) * xScale;
 
   // Map an s3 yPos to SVG cross-section coordinate
-  const toCrossAxis = (yPos) =>
-    pad + ((yPos - yMin) / yRange) * (renderWidth - SEAT_SIZE - pad * 2);
+  const toCrossAxis = (yPos) => pad + (yPos - yMin) * yScale;
 
   // In portrait:  x = cross-section, y = row axis (train runs top→bottom)
   // In landscape: x = row axis,      y = cross-section (train runs left→right)
@@ -77,6 +82,29 @@ const CarriageSVG = ({ data, landscape = false }) => {
             return (
               <g key={seat.id} transform={`translate(${x}, ${y})`}>
                 <BikeGraphic width={SEAT_SIZE} height={SEAT_SIZE} />
+              </g>
+            );
+          }
+
+          if (seat.type === "table") {
+            // Convert the four s3 pixel edges directly to SVG coordinates.
+            // x1/x2 are along the train axis; y1/y2 are across the carriage.
+            // The table must not span the aisle — x1/x2 already exclude seat width.
+            const svgX1 = toRowAxis(seat.x1);
+            const svgX2 = toRowAxis(seat.x2);
+            const svgY1 = toCrossAxis(seat.y1);
+            const svgY2 = toCrossAxis(seat.y2);
+
+            // In portrait: train axis = SVG Y, cross = SVG X
+            // In landscape: train axis = SVG X, cross = SVG Y
+            const left   = landscape ? svgX1 : svgY1;
+            const top    = landscape ? svgY1 : svgX1;
+            const width  = landscape ? svgX2 - svgX1 : svgY2 - svgY1;
+            const height = landscape ? svgY2 - svgY1 : svgX2 - svgX1;
+
+            return (
+              <g key={seat.id} transform={`translate(${left}, ${top})`}>
+                <TableGraphic width={width} height={height} />
               </g>
             );
           }
